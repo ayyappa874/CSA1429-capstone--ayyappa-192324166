@@ -1,0 +1,212 @@
+8.1 Code snippet
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+// Token types
+typedef enum {
+    TOKEN_NUMBER,
+    TOKEN_ID,
+    TOKEN_OP,
+    TOKEN_END
+} TokenType;
+// Token structure
+typedef struct {
+    TokenType type;
+    char value[32];
+} Token;
+// Lexer
+Token* lexer(const char* input, int* token_count) {
+    Token* tokens = malloc(100 * sizeof(Token));
+    int i = 0, j = 0;
+    while (input[i] != '\0') {
+        if (isspace(input[i])) {
+            i++;
+            continue;
+        }
+        if (isdigit(input[i])) {
+            tokens[j].type = TOKEN_NUMBER;
+            int k = 0;
+            while (isdigit(input[i])) {
+                tokens[j].value[k++] = input[i++];
+            }
+            tokens[j].value[k] = '\0';
+            j++;
+        } else if (isalpha(input[i])) {
+            tokens[j].type = TOKEN_ID;
+            int k = 0;
+            while (isalpha(input[i])) {
+                tokens[j].value[k++] = input[i++];
+            }
+            tokens[j].value[k] = '\0';
+            j++;
+        } else if (input[i] == '+' || input[i] == '-' || input[i] == '*' || input[i] == '/' || input[i] == '=') {
+            tokens[j].type = TOKEN_OP;
+            tokens[j].value[0] = input[i++];
+            tokens[j].value[1] = '\0';
+            j++;
+        } else {
+            printf("Error: Unknown character '%c'\n", input[i]);
+            exit(1);
+        }
+    }
+    tokens[j].type = TOKEN_END;
+    *token_count = j;
+    return tokens;
+}
+// Parser
+typedef struct ASTNode {
+    char op;
+    char value[32];
+    struct ASTNode* left;
+    struct ASTNode* right;
+} ASTNode;
+ASTNode* parse_expression(Token* tokens, int* pos);
+ASTNode* parse_term(Token* tokens, int* pos);
+ASTNode* parse_factor(Token* tokens, int* pos);
+ASTNode* parse_expression(Token* tokens, int* pos) {
+    ASTNode* node = parse_term(tokens, pos);
+    while (tokens[*pos].type == TOKEN_OP && (tokens[*pos].value[0] == '+' || tokens[*pos].value[0] == '-')) {
+        char op = tokens[*pos].value[0];
+        (*pos)++;
+        ASTNode* right = parse_term(tokens, pos);
+        ASTNode* new_node = malloc(sizeof(ASTNode));
+        new_node->op = op;
+        new_node->left = node;
+        new_node->right = right;
+        node = new_node;
+    }
+    return node;
+}
+ASTNode* parse_term(Token* tokens, int* pos) {
+    ASTNode* node = parse_factor(tokens, pos);
+    while (tokens[*pos].type == TOKEN_OP && (tokens[*pos].value[0] == '*' || tokens[*pos].value[0] == '/')) {
+        char op = tokens[*pos].value[0];
+        (*pos)++;
+        ASTNode* right = parse_factor(tokens, pos);
+        ASTNode* new_node = malloc(sizeof(ASTNode));
+        new_node->op = op;
+        new_node->left = node;
+        new_node->right = right;
+        node = new_node;
+    }
+    return node;
+}
+ASTNode* parse_factor(Token* tokens, int* pos) {
+    if (tokens[*pos].type == TOKEN_NUMBER || tokens[*pos].type == TOKEN_ID) {
+        ASTNode* node = malloc(sizeof(ASTNode));
+        node->op = '\0';
+        strcpy(node->value, tokens[*pos].value);
+        node->left = NULL;
+        node->right = NULL;
+        (*pos)++;
+        return node;
+    } else if (tokens[*pos].type == TOKEN_OP && tokens[*pos].value[0] == '(') {
+        (*pos)++;
+        ASTNode* node = parse_expression(tokens, pos);
+        if (tokens[*pos].type == TOKEN_OP && tokens[*pos].value[0] == ')') {
+            (*pos)++;
+        } else {
+            printf("Error: Expected ')'\n");
+            exit(1);
+        }
+        return node;
+    } else {
+        printf("Error: Expected number, identifier, or '('\n");
+        exit(1);
+    }
+}
+// Three-Address Code Generator
+void generate_three_address_code(ASTNode* node, int* temp_count) {
+    if (node->op == '\0') {
+        return;
+    }
+    generate_three_address_code(node->left, temp_count);
+    generate_three_address_code(node->right, temp_count);
+    printf("t%d = %s %c %s\n", *temp_count, node->left->value, node->op, node->right->value);
+    sprintf(node->value, "t%d", (*temp_count)++);
+}
+// C Code Generator
+void generate_c_code(ASTNode* node) {
+    if (node->op == '\0') {
+        printf("%s", node->value);
+    } else {
+        printf("(");
+        generate_c_code(node->left);
+        printf(" %c ", node->op);
+        generate_c_code(node->right);
+        printf(")");
+    }
+}
+// Evaluate the AST and print intermediate results
+int evaluate_ast(ASTNode* node) {
+    if (node->op == '\0') {
+        // If it's a number or identifier, return its value
+        return atoi(node->value);
+    } else {
+        // Evaluate left and right subtrees
+        int left_value = evaluate_ast(node->left);
+        int right_value = evaluate_ast(node->right);
+        // Perform the operation
+        switch (node->op) {
+            case '+':
+                printf("%d + %d = %d\n", left_value, right_value, left_value + right_value);
+                return left_value + right_value;
+            case '-':
+                printf("%d - %d = %d\n", left_value, right_value, left_value - right_value);
+                return left_value - right_value;
+            case '*':
+                printf("%d * %d = %d\n", left_value, right_value, left_value * right_value);
+                return left_value * right_value;
+            case '/':
+                printf("%d / %d = %d\n", left_value, right_value, left_value / right_value);
+                return left_value / right_value;
+            default:
+                printf("Error: Unknown operator '%c'\n", node->op);
+                exit(1);
+        }
+    }
+}
+// Main function
+int main() {
+    char input[256];  
+    // Prompt user for input
+    printf("Enter an expression (e.g., Y = 10 + 5 * 3 - 2): ");
+    fgets(input, sizeof(input), stdin);
+    // Remove the newline character if it's present
+    input[strcspn(input, "\n")] = '\0';
+    int token_count;
+    Token* tokens = lexer(input, &token_count);
+    // Parse the assignment separately
+    int pos = 0;
+    if (tokens[pos].type == TOKEN_ID && tokens[pos + 1].type == TOKEN_OP && tokens[pos + 1].value[0] == '=') {
+        char var_name[32];
+        strcpy(var_name, tokens[pos].value); // Store the variable name (e.g., "Y")
+        pos += 2; // Skip the variable and '='
+        // Parse the expression after '='
+        ASTNode* ast = parse_expression(tokens, &pos);
+        // Generate three-address code
+        printf("Generated Three-Address Code:\n");
+        int temp_count = 0;
+        generate_three_address_code(ast, &temp_count);
+        printf("%s = t%d\n", var_name, temp_count - 1);
+        // Generate C code
+        printf("\nGenerated C Code:\n");
+        printf("int %s = ", var_name);
+        generate_c_code(ast);
+        printf(";\n");
+        // Evaluate the AST and print intermediate results
+        printf("\nStep-by-Step Evaluation:\n");
+        int result = evaluate_ast(ast);
+        printf("\nFinal Result: %s = %d\n", var_name, result);
+    } else {
+        printf("Error: Expected an assignment statement (e.g., Y = ...)\n");
+    }
+    // Free memory
+    free(tokens);
+    // TODO: Free AST nodes (not implemented for simplicity)
+    return 0;
+}
+
+
+
